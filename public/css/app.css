@@ -1,0 +1,20 @@
+@import url('./bootstrap.min.css');
+
+div.container, div.container-fluid {
+    margin-top: 20px;
+}
+div.bg-image {
+    padding: 2em;
+    background-size: cover;
+    background-position: center center;
+}
+div.bg-image h1,  div.bg-image p {
+    color: white;
+    text-shadow: 3px 3px 3px rgba(0,0,0,0.5);
+}
+div.badge{
+    color: #0080FF;
+}
+div.carousel-caption {
+    text-shadow: 3px 3px 3px rgba(0,0,0,0.5);
+}
