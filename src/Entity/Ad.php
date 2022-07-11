@@ -3,19 +3,15 @@
 namespace App\Entity;
 
 use Cocur\Slugify\Slugify;
-use App\Repository\AdRepository;
-use Doctrine\ORM\Mapping as ORM;
-use Doctrine\Common\Collections\Collection;
-use ApiPlatform\Core\Annotation\ApiResource;
 use Doctrine\Common\Collections\ArrayCollection;
-
-use Symfony\Component\Validator\Constraints as Assert;
+use Doctrine\Common\Collections\Collection;
+use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
- * @ApiResource()
- * @ORM\Entity(repositoryClass=AdRepository::class)
- * @ORM\HasLifecycleCallbacks()
+ * @ORM\Entity(repositoryClass="App\Repository\AdRepository")
+ * @ORM\HasLifecycleCallbacks
  * @UniqueEntity(
  *     fields={"title"},
  *     message="Une autre annonce possède déjà ce titre, merci de le modifier"
@@ -24,19 +20,15 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 class Ad
 {
     /**
-     * @ORM\Id
-     * @ORM\GeneratedValue
+     * @ORM\Id()
+     * @ORM\GeneratedValue()
      * @ORM\Column(type="integer")
      */
     private $id;
 
     /**
      * @ORM\Column(type="string", length=255)
-     * @Assert\Length(
-     *  min = 10,
-     *  max = 255,
-     *  minMessage = "Le titre doit faire plus de 10 caractères !",
-     *  maxMessage = "Le titre ne peut pas faire plus de 255 caractères !")
+     * @Assert\Length(min=10, max=255, minMessage="Le titre doit faire plus de 10 caractères", maxMessage="Le titre ne peut pas faire plus de 255 caractères")
      */
     private $title;
 
@@ -52,17 +44,13 @@ class Ad
 
     /**
      * @ORM\Column(type="text")
-     * @Assert\Length(
-     *  min = 20,
-     *  minMessage = "Votre introduction doit faire plus de 20 caractères !")
+     * @Assert\Length(min=20, minMessage="Votre introduction doit faire plus de 20 caractères")
      */
     private $introduction;
 
     /**
      * @ORM\Column(type="text")
-     * @Assert\Length(
-     *  min = 100,
-     *  minMessage = "Votre description ne peut pas faire moins de 100 caractères !")
+     * @Assert\Length(min=100, minMessage="Votre description ne peut pas faire moins de 100 caractères")
      */
     private $content;
 
@@ -78,20 +66,32 @@ class Ad
     private $rooms;
 
     /**
-     * @ORM\OneToMany(targetEntity=Image::class, mappedBy="ad", orphanRemoval=true)
+     * @ORM\OneToMany(targetEntity="App\Entity\Image", mappedBy="ad", orphanRemoval=true)
      * @Assert\Valid()
      */
     private $images;
 
     /**
-     * @ORM\ManyToOne(targetEntity=User::class, inversedBy="ads")
+     * @ORM\ManyToOne(targetEntity="App\Entity\User", inversedBy="ads")
      * @ORM\JoinColumn(nullable=false)
      */
     private $author;
 
+    /**
+     * @ORM\OneToMany(targetEntity="App\Entity\Booking", mappedBy="ad")
+     */
+    private $bookings;
+
+    /**
+     * @ORM\OneToMany(targetEntity="App\Entity\Comment", mappedBy="ad", orphanRemoval=true)
+     */
+    private $comments;
+
     public function __construct()
     {
         $this->images = new ArrayCollection();
+        $this->bookings = new ArrayCollection();
+        $this->comments = new ArrayCollection();
     }
 
     /**
@@ -105,6 +105,60 @@ class Ad
             $slugify = new Slugify();
             $this->slug = $slugify->slugify($this->title);
         }
+    }
+
+    /**
+     * Permet de récupérer le commentaire d'un auteur par rapport à une annonce
+     *
+     * @param User $author
+     *
+     * @return Comment|null
+     */
+    public function getCommentFromAuthor(User $author){
+        foreach($this->comments as $comment) {
+            if ($comment->getAuthor() === $author) return $comment;
+        }
+
+        return null;
+    }
+
+    /**
+     * Permet d'obtenir la moyenne globale des notes pour cette annonce
+     *
+     * @return float
+     */
+    public function getAvgRatings() {
+        //Calculer la somme des notations
+        $sum = array_reduce($this->comments->toArray(), function($total, $comment) {
+            return $total + $comment->getRating();
+        }, 0);
+
+        // Faire la division pour avoir la moyenne
+        if (count($this->comments) > 0) return $sum / count($this->comments);
+
+        return 0;
+    }
+
+    /**
+     * Permet d'obtenir un tableau des jours qui ne sont pas disponibles pour cette annonce
+     *
+     * @return array Un tableau d'objets DateTime représentant les jours d'occupation
+     */
+    public function getNotAvailableDays() {
+        $notAvailableDays = [];
+
+        foreach ($this->bookings as $booking) {
+            // Calculer les jours qui se trouvent entre la date d'arrivée et de départ
+            $resultat = range($booking->getStartDate()->getTimeStamp(), $booking->getEndDate()->getTimeStamp(), 24*60*60);
+
+            $days = array_map(function($dayTimestamp){
+                return new \DateTime(date('Y-m-d', $dayTimestamp));
+            }, $resultat);
+
+            $notAvailableDays = array_merge($notAvailableDays, $days);
+        }
+
+        return $notAvailableDays;
     }
 
     public function getId(): ?int
@@ -197,7 +251,7 @@ class Ad
     }
 
     /**
-     * @return Collection<int, Image>
+     * @return Collection|Image[]
      */
     public function getImages(): Collection
     {
@@ -216,7 +270,8 @@ class Ad
 
     public function removeImage(Image $image): self
     {
-        if ($this->images->removeElement($image)) {
+        if ($this->images->contains($image)) {
+            $this->images->removeElement($image);
             // set the owning side to null (unless already changed)
             if ($image->getAd() === $this) {
                 $image->setAd(null);
@@ -234,6 +289,68 @@ class Ad
     public function setAuthor(?User $author): self
     {
         $this->author = $author;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection|Booking[]
+     */
+    public function getBookings(): Collection
+    {
+        return $this->bookings;
+    }
+
+    public function addBooking(Booking $booking): self
+    {
+        if (!$this->bookings->contains($booking)) {
+            $this->bookings[] = $booking;
+            $booking->setAd($this);
+        }
+
+        return $this;
+    }
+
+    public function removeBooking(Booking $booking): self
+    {
+        if ($this->bookings->contains($booking)) {
+            $this->bookings->removeElement($booking);
+            // set the owning side to null (unless already changed)
+            if ($booking->getAd() === $this) {
+                $booking->setAd(null);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection|Comment[]
+     */
+    public function getComments(): Collection
+    {
+        return $this->comments;
+    }
+
+    public function addComment(Comment $comment): self
+    {
+        if (!$this->comments->contains($comment)) {
+            $this->comments[] = $comment;
+            $comment->setAd($this);
+        }
+
+        return $this;
+    }
+
+    public function removeComment(Comment $comment): self
+    {
+        if ($this->comments->contains($comment)) {
+            $this->comments->removeElement($comment);
+            // set the owning side to null (unless already changed)
+            if ($comment->getAd() === $this) {
+                $comment->setAd(null);
+            }
+        }
 
         return $this;
     }

@@ -3,16 +3,15 @@
 namespace App\Entity;
 
 use Cocur\Slugify\Slugify;
-use App\Repository\UserRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
- * @ORM\Entity(repositoryClass=UserRepository::class)
+ * @ORM\Entity(repositoryClass="App\Repository\UserRepository")
  * @ORM\HasLifecycleCallbacks()
  * @UniqueEntity(
  *     fields={"email"},
@@ -22,8 +21,8 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 class User implements UserInterface
 {
     /**
-     * @ORM\Id
-     * @ORM\GeneratedValue
+     * @ORM\Id()
+     * @ORM\GeneratedValue()
      * @ORM\Column(type="integer")
      */
     private $id;
@@ -80,14 +79,24 @@ class User implements UserInterface
     private $slug;
 
     /**
-     * @ORM\OneToMany(targetEntity=Ad::class, mappedBy="author")
+     * @ORM\OneToMany(targetEntity="App\Entity\Ad", mappedBy="author")
      */
     private $ads;
 
     /**
-     * @ORM\ManyToMany(targetEntity=Role::class, mappedBy="users")
+     * @ORM\ManyToMany(targetEntity="App\Entity\Role", mappedBy="users")
      */
-    private $userRoles;
+    private $userRole;
+
+    /**
+     * @ORM\OneToMany(targetEntity="App\Entity\Booking", mappedBy="booker")
+     */
+    private $bookings;
+
+    /**
+     * @ORM\OneToMany(targetEntity="App\Entity\Comment", mappedBy="author", orphanRemoval=true)
+     */
+    private $comments;
 
     /**
      * Permet d'obtenir le nom complet de l'utilisateur
@@ -99,6 +108,19 @@ class User implements UserInterface
     }
 
     /**
+     * Permet de savoir si l'utilisateur est administrateur ou non
+     *
+     * @return bool
+     */
+    public function isAdmin() {
+        if (in_array("ROLE_ADMIN", $this->getRoles())) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
      * Permet d'initialiser le slug
      *
      * @ORM\PrePersist
@@ -107,14 +129,16 @@ class User implements UserInterface
     public function initializeSlug() {
         if (empty($this->slug)) {
             $slugify = new Slugify();
-            $this->slug = $slugify->slugify($this->firstName .' '. $this->lastName);
+            $this->slug = $slugify->slugify($this->firstName . ' ' . $this->lastName);
         }
     }
 
     public function __construct()
     {
         $this->ads = new ArrayCollection();
-        $this->userRoles = new ArrayCollection();
+        $this->userRole = new ArrayCollection();
+        $this->bookings = new ArrayCollection();
+        $this->comments = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -219,7 +243,7 @@ class User implements UserInterface
     }
 
     /**
-     * @return Collection<int, Ad>
+     * @return Collection|Ad[]
      */
     public function getAds(): Collection
     {
@@ -238,7 +262,8 @@ class User implements UserInterface
 
     public function removeAd(Ad $ad): self
     {
-        if ($this->ads->removeElement($ad)) {
+        if ($this->ads->contains($ad)) {
+            $this->ads->removeElement($ad);
             // set the owning side to null (unless already changed)
             if ($ad->getAuthor() === $this) {
                 $ad->setAuthor(null);
@@ -249,9 +274,8 @@ class User implements UserInterface
     }
 
     // Fonction de la UserInterface
-    public function getRoles()
-    {
-        $roles = $this->userRoles->map(function($role){
+    public function getRoles() {
+        $roles = $this->userRole->map(function($role){
             return $role->getTitle();
         })->toArray();
 
@@ -259,33 +283,32 @@ class User implements UserInterface
 
         return $roles;
     }
-    
-    public function getPassword()
-    {
+
+    public function getPassword() {
         return $this->hash;
     }
 
-    public function getSalt(){}
+    public function getSalt() {}
 
     public function getUsername()
     {
         return $this->email;
     }
 
-    public function eraseCredentials(){}
+    public function eraseCredentials() {}
 
     /**
-     * @return Collection<int, Role>
+     * @return Collection|Role[]
      */
-    public function getUserRoles(): Collection
+    public function getUserRole(): Collection
     {
-        return $this->userRoles;
+        return $this->userRole;
     }
 
     public function addUserRole(Role $userRole): self
     {
-        if (!$this->userRoles->contains($userRole)) {
-            $this->userRoles[] = $userRole;
+        if (!$this->userRole->contains($userRole)) {
+            $this->userRole[] = $userRole;
             $userRole->addUser($this);
         }
 
@@ -294,12 +317,73 @@ class User implements UserInterface
 
     public function removeUserRole(Role $userRole): self
     {
-        if ($this->userRoles->removeElement($userRole)) {
+        if ($this->userRole->contains($userRole)) {
+            $this->userRole->removeElement($userRole);
             $userRole->removeUser($this);
         }
 
         return $this;
     }
 
+    /**
+     * @return Collection|Booking[]
+     */
+    public function getBookings(): Collection
+    {
+        return $this->bookings;
+    }
 
+    public function addBooking(Booking $booking): self
+    {
+        if (!$this->bookings->contains($booking)) {
+            $this->bookings[] = $booking;
+            $booking->setBooker($this);
+        }
+
+        return $this;
+    }
+
+    public function removeBooking(Booking $booking): self
+    {
+        if ($this->bookings->contains($booking)) {
+            $this->bookings->removeElement($booking);
+            // set the owning side to null (unless already changed)
+            if ($booking->getBooker() === $this) {
+                $booking->setBooker(null);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection|Comment[]
+     */
+    public function getComments(): Collection
+    {
+        return $this->comments;
+    }
+
+    public function addComment(Comment $comment): self
+    {
+        if (!$this->comments->contains($comment)) {
+            $this->comments[] = $comment;
+            $comment->setAuthor($this);
+        }
+
+        return $this;
+    }
+
+    public function removeComment(Comment $comment): self
+    {
+        if ($this->comments->contains($comment)) {
+            $this->comments->removeElement($comment);
+            // set the owning side to null (unless already changed)
+            if ($comment->getAuthor() === $this) {
+                $comment->setAuthor(null);
+            }
+        }
+
+        return $this;
+    }
 }
